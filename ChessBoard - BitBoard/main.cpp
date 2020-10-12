@@ -15,6 +15,18 @@
 using namespace std;
 
 using mask=unsigned long long;
+mask encode(const string &s){return (s[1]-'1')*8+(s[0]-'a');}
+string decode(mask x){return string()+char((x&7)+'a')+char((x>>3)+'1');}
+void printbb(mask bb,string info)
+{
+	cout<<endl<<info<<" = \n";
+	for(int i=7;i>=0;i--)
+	{
+		for(int j=0;j<8;j++)printf("%c",bb&(1ull<<(i*8+j))?'*':'.');
+		puts("/");
+	}
+	puts("");
+}
 inline int lowbit(mask s)
 {
 	static int index64[64]={
@@ -34,7 +46,6 @@ inline mask hibit(mask s){return 63-__builtin_clzll(s);}
 inline bool ins(const string &s,char c){return s.find(c)!=string::npos;}
 
 const int dx[]={-1,1,0,0,-1,1,-1,1},dy[]={0,0,-1,1,-1,1,1,-1},ndx[]={-2,2,-2,2,-1,1,-1,1},ndy[]={-1,1,1,-1,-2,2,2,-2};
-mask Ratt[64][2],Batt[64][2];
 
 struct backup
 {
@@ -48,27 +59,19 @@ struct play{mask from,to,capt,c,sp,pc;};
 struct board
 {
 	vector<vector<mask>> castle;
-	mask Plies,Move,toMove,enp,file[8],rank[8],X[2],K[2],Q[2],R[2],B[2],N[2],P[2],pstart[2],prom[2],all,Natt[64],Patt[2][64],Katt[64];
+	mask Plies,Move,toMove,enp,file[8],rank[8],X[2],K[2],Q[2],R[2],B[2],N[2],P[2],pstart[2],prom[2],all,Natt[64],Patt[2][64],Katt[64],Ratt[64][2],Batt[64][2];
 	vector<play> mlist;
-
-	static mask encode(const string &s){return (s[1]-'1')*8+(s[0]-'a');}
-	static string decode(mask x){return string()+char((x&7)+'a')+char((x>>3)+'1');}
-
-	static void printbb(mask bb,string info)
+	struct stats
 	{
-		cout<<endl<<info<<" = \n";
-		for(int i=7;i>=0;i--)
-		{
-			for(int j=0;j<8;j++)printf("%d",bool(bb&(1ull<<(i*8+j))));
-			puts("/");
-		}
-		puts("");
-	}
+		int capt,enp,castle,prom,check,mate;
+		stats(){capt=enp=castle=prom=check=mate=0;}
+	}ss;
 
-	board(string s):file{},rank{},X{},K{},Q{},R{},B{},N{},P{},Natt{},Patt{},Katt{}
+	board(string s):file{},rank{},X{},K{},Q{},R{},B{},N{},P{},all{},Natt{},Patt{},Katt{},Ratt{},Batt{}
 	{
 		map<int,mask*> mp={{'K',K},{'Q',Q},{'R',R},{'B',B},{'N',N},{'P',P}};
-		for(char &c:s)if(c=='/')c=' ';
+		for(char &c:s)
+			if(c=='/')c=' ';
 		string t;
 		istringstream in(s);
 		for(int i=7;i>=0;i--)
@@ -96,6 +99,7 @@ struct board
 		prom[1]=rank[0];
 		maintain();
 
+		//~ King, Knight, Pawn preprocess
 		for(int i=0;i<64;i++)
 		{
 			mask b=1ull<<i;
@@ -112,9 +116,30 @@ struct board
 			Patt[0][i]=((b&~file[7])<<9)|((b&~file[0])<<7);
 			Patt[1][i]=((b&~file[7])>>7)|((b&~file[0])>>9);
 		}
+
+		//^ Rook, Bishop, Queen preprocess
+		for(int r=0;r<8;r++)
+			for(int f=0;f<8;f++)
+				for(int d=0;d<2;d++)
+				{
+					for(int q=2*d;q<2*d+2;q++)
+						for(int i=1;i<8;i++)
+						{
+							int x=r+i*dx[q],y=f+i*dy[q];
+							if(x<0||y<0||x>7||y>7)break;
+							Ratt[r*8+f][d]|=1ull<<(x*8+y);
+						}
+					for(int q=2*d+4;q<2*d+6;q++)
+						for(int i=1;i<8;i++)
+						{
+							int x=r+i*dx[q],y=f+i*dy[q];
+							if(x<0||y<0||x>7||y>7)break;
+							Batt[r*8+f][d]|=1ull<<(x*8+y);
+						}
+				}
 	}
 
-	mask KNPmove(mask c,mask k,mask *KNPatt,int type)
+	mask KNPmove(mask c,mask k,mask *KNPatt)
 	{
 		mask att=0;
 		while(k)
@@ -123,22 +148,18 @@ struct board
 			att|=KNPatt[b];
 			k^=1ull<<b;
 		}
-		return !type?att&~X[c]:att&X[!c];
+		return att&~X[c];
 	}
-	mask Pmunch(mask c,mask p){return KNPmove(c,p,Patt[c],1);}
-	mask Pmove(mask c,mask p){return !c
-		?((p|(((p&pstart[0])<<8)&~all))<<8)&~all
-		:((p|(((p&pstart[1])>>8)&~all))>>8)&~all;
-	}
-	mask Kmove(mask c,mask k){return KNPmove(c,k,Katt,0);}
-	mask Nmove(mask c,mask n){return KNPmove(c,n,Natt,0);}
+	mask Pcapt(mask c,mask p){return KNPmove(c,p,Patt[c]);}
+	mask Kmove(mask c,mask k){return KNPmove(c,k,Katt);}
+	mask Nmove(mask c,mask n){return KNPmove(c,n,Natt);}
 
 #define Xm(x,atk,piece)\
 	for(mask pc=piece;pc;)\
 	{\
 		mask bit=lowbit(pc),p=1ull<<bit,att=atk[bit][x],obs=all&att,low=obs&(p-1),hi=obs^low;\
 		low|=1;hi|=1ull<<63;\
-		res|=(2*(1ull<<lowbit(hi))-(1ull<<hibit(low)))&att&~X[c];\
+		res|=(2*(1ull<<lowbit(hi))-(1ull<<hibit(low)))&att;\
 		pc^=p;\
 	}\
 
@@ -147,31 +168,31 @@ struct board
 		mask res=0;
 		Xm(0,Ratt,r);
 		Xm(1,Ratt,r);
-		return res;
+		return res&~X[c];
 	}
 	mask Bmove(mask c,mask b)
 	{
 		mask res=0;
 		Xm(0,Batt,b);
 		Xm(1,Batt,b);
-		return res;
+		return res&~X[c];
 	}
 	mask Qmove(mask c,mask q){return Rmove(c,q)|Bmove(c,q);}
 
-	bool inCheck(mask c,mask p){return (Pmunch(!c,P[!c])|Kmove(!c,K[!c])|Nmove(!c,N[!c])|Rmove(!c,R[!c])|Bmove(!c,B[!c])|Qmove(!c,Q[!c]))&(1ull<<p);}
+	bool inCheck(mask c,mask p){return (Pcapt(!c,P[!c])|Kmove(!c,K[!c])|Nmove(!c,N[!c])|Rmove(!c,R[!c])|Bmove(!c,B[!c])|Qmove(!c,Q[!c]))&(1ull<<p);}
 	void maintain(){X[0]=K[0]|Q[0]|R[0]|B[0]|N[0]|P[0];X[1]=K[1]|Q[1]|R[1]|B[1]|N[1]|P[1];all=X[0]|X[1];}
 
 	backup bak[110001];
-	int cnt=0,ptr[101],cur=0;
+	int cnt=0,ptr[101]={},cur=0;
 	void alloc(){ptr[++cnt]=cur;}
 	void upd(mask &x,mask t){bak[++cur]=&x;x=t;}
 	void revert(){while(cur!=ptr[cnt])bak[cur--].restore();cnt--;}
 	void undo(){revert();maintain();}
-	void confirm(){cur=ptr[--cnt];}
+	void confirm(){cur=ptr[cnt--];}
 
 #define UPD(PC)\
-	if(PC[p.c]&(1ull<<p.from))upd(PC[p.c],PC[p.c]^(1ull<<p.from)^(1ull<<p.to));\
-	if(PC[!p.c]&(1ull<<p.capt))upd(PC[!p.c],PC[!p.c]^(1ull<<p.capt));
+	if(p.from!=64&&(PC[p.c]&(1ull<<p.from)))upd(PC[p.c],PC[p.c]^(1ull<<p.from)^(1ull<<p.to));\
+	if(p.capt!=64&&(PC[!p.c]&(1ull<<p.capt)))upd(PC[!p.c],PC[!p.c]^(1ull<<p.capt));
 
 	bool trial(const play &p)
 	{
@@ -214,7 +235,7 @@ struct board
 			{
 				int sq[]={!c?4:60,d?!c?5:61:!c?3:59,d?!c?6:62:!c?2:58},beg=begin[c][d],end=ending[c][d];
 				if(inCheck(c,sq[0])||inCheck(c,sq[1])||inCheck(c,sq[2]))continue;
-				if(all&((1ull<<(end+1))-(1ull<<beg)))continue;
+				if(all&(2*(1ull<<end)-(1ull<<beg)))continue;
 				add(64,64,64,c,d+1,0);
 			}
 		//* En Passant
@@ -234,8 +255,8 @@ struct board
 			mask b=lowbit(m),sq[]={!c?b+16:b-16,!c?b+8:b-8,!c?b+7:b-9,!c?b+9:b-7};
 			if((pstart[c]&(1ull<<b))&&(~all&(1ull<<sq[0]))&&(~all&(1ull<<sq[1])))getProm(c,b,sq[0],64);
 			if(~all&(1ull<<sq[1]))getProm(c,b,sq[1],64);
-			if((X[!c]&(1ull<<sq[2]))&&(b&7)>0)getProm(c,b,sq[2],sq[2]);
-			if((X[!c]&(1ull<<sq[3]))&&(b&7)<7)getProm(c,b,sq[3],sq[3]);
+			if(sq[2]<64&&(X[!c]&(1ull<<sq[2]))&&(b&7)>0)getProm(c,b,sq[2],sq[2]);
+			if(sq[3]<64&&(X[!c]&(1ull<<sq[3]))&&(b&7)<7)getProm(c,b,sq[3],sq[3]);
 			m^=1ull<<b;
 		}
 		//? Other pieces
@@ -246,7 +267,7 @@ struct board
 		while(q)\
 		{\
 			mask b2=lowbit(q);\
-			play go={b,b2,all&(1ull<<b2)?b2:64,c,0,pc};\
+			play go={b,b2,X[!c]&(1ull<<b2)?b2:64,c,0,pc};\
 			if(trial(go))mlist.emplace_back(go);\
 			q^=1ull<<b2;\
 		}\
@@ -272,14 +293,15 @@ struct board
 			mask type=sp-1,bk=!c?4:60,ek=!type?bk-2:bk+2,br=!c?!type?0:7:!type?56:63,er=!type?ek+1:ek-1;
 			upd(K[c],K[c]^(1ull<<bk)^(1ull<<ek));
 			upd(R[c],R[c]^(1ull<<br)^(1ull<<er));
+			ss.castle++;
 		}
 		else if(3<=sp&&sp<=6) //? Promotion
 		{
 			upd(P[c],P[c]^(1ull<<from));
 			mask &go=(sp==3?Q:sp==4?R:sp==5?B:N)[c];
 			upd(go,go^(1ull<<to));
+			ss.prom++;
 		}
-		else if(sp==7)upd(P[c],P[c]^(1ull<<from)^(1ull<<to));//^ Pawn Double Jump
 		else //` Normal move
 		{
 			mask &go=(!pc?K:pc==1?Q:pc==2?R:pc==3?B:pc==4?N:P)[c];
@@ -294,17 +316,21 @@ struct board
 			if(B[!c]&(1ull<<capt))upd(B[!c],B[!c]^(1ull<<capt));
 			if(N[!c]&(1ull<<capt))upd(N[!c],N[!c]^(1ull<<capt));
 			if(P[!c]&(1ull<<capt))upd(P[!c],P[!c]^(1ull<<capt));
+			ss.capt++;
 		}
+		if(capt!=64&&to!=capt)ss.enp++;
 
 		upd(Plies,pc==5||capt!=64?0:Plies+1);
 		upd(enp,sp==7?(from+to)>>1:64);
-		if(!pc||(pc==2&&((!c&&from==0)||(c&&from==56)))||sp==1||sp==2)upd(castle[c][0],0);
-		if(!pc||(pc==2&&((!c&&from==7)||(c&&from==63)))||sp==1||sp==2)upd(castle[c][1],0);
+		if(!pc||(pc==2&&((!c&&from==0)||(c&&from==56))))upd(castle[c][0],0);
+		if(!pc||(pc==2&&((!c&&from==7)||(c&&from==63))))upd(castle[c][1],0);
 		if((!c&&capt==56)||(c&&capt==0))upd(castle[!c][0],0);
 		if((!c&&capt==63)||(c&&capt==7))upd(castle[!c][1],0);
 		upd(toMove,toMove^1);
 		if(c)upd(Move,Move+1);
 		maintain();
+
+		if(K[!c]&&inCheck(!c,lowbit(K[!c])))ss.check++;
 	}
 
 	int perft(int d)
@@ -330,38 +356,13 @@ e.g. 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'";
 
 int main()
 {
-	//! Rook, Bishop, Queen Preprocess
-	for(int r=0;r<8;r++)
-		for(int f=0;f<8;f++)
-			for(int d=0;d<2;d++)
-			{
-				for(int q=2*d;q<2*d+2;q++)
-					for(int i=1;i<8;i++)
-					{
-						int x=r+i*dx[q],y=f+i*dy[q];
-						if(x<0||y<0||x>7||y>7)break;
-						Ratt[r*8+f][d]|=1ull<<(x*8+y);
-					}
-				for(int q=2*d+4;q<2*d+6;q++)
-					for(int i=1;i<8;i++)
-					{
-						int x=r+i*dx[q],y=f+i*dy[q];
-						if(x<0||y<0||x>7||y>7)break;
-						Batt[r*8+f][d]|=1ull<<(x*8+y);
-					}
-			}
-
 	for(string s;;)
 	{
-		printf("%s\n\nFen (enter nothing to get default) >>> ",fenf);
-		getline(cin,s);
+		printf("%s\n\nFen (Enter to get default, Ctrl+D to quit) >>> ",fenf);
+		if(!getline(cin,s)){puts("\n\nQuitting...");break;}
 		if(s.empty())s="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-		board b(s),bbak(s);
-		for(int i=1;i<6;i++)printf("Perft %d = %d\n",i,b.perft(i));
-
-		printf("Rematch? (Y/N) > ");
-		getline(cin,s);
-		if(!s.empty()&&toupper(s[0])=='N')break;
+		board b(s);
+		for(int i=1;i<6;i++)b.ss={},printf("Perft %d = %10d,",i,b.perft(i)),printf(" %9d captures, %6d e.p's, %7d castles, %8d promotions, %8d checks.\n",b.ss.capt,b.ss.enp,b.ss.castle,b.ss.prom,b.ss.check);
 	}
 }
