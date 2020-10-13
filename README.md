@@ -1,2 +1,4 @@
-# Tiny-Projects
-Some small projects by me. Usually with single-file stuff.
+# Tiny Projects
+Some small projects by me. 
+### Chess Board
+Simple CLI chess board implementation using bitboard.
