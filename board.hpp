@@ -46,11 +46,6 @@ struct board
 	vector<vector<mask>> castle;
 	mask Plies,Move,toMove,enp,file[8],rank[8],X[2],K[2],Q[2],R[2],B[2],N[2],P[2],pstart[2],prom[2],all,Natt[64],Patt[2][64],Katt[64],Ratt[64][2],Batt[64][2];
 	vector<play> mlist;
-	struct stats
-	{
-		int capt,enp,castle,prom,check,mate;
-		stats(){capt=enp=castle=prom=check=mate=0;}
-	}ss;
 
 	board(string s):file{},rank{},X{},K{},Q{},R{},B{},N{},P{},all{},Natt{},Patt{},Katt{},Ratt{},Batt{}
 	{
@@ -164,7 +159,7 @@ struct board
 	}
 	mask Qmove(mask c,mask q){return Rmove(c,q)|Bmove(c,q);}
 
-	bool inCheck(mask c,mask p){return (Pcapt(!c,P[!c])|Kmove(!c,K[!c])|Nmove(!c,N[!c])|Rmove(!c,R[!c])|Bmove(!c,B[!c])|Qmove(!c,Q[!c]))&(1ull<<p);}
+	bool inCheck(mask c,mask pos){return (Pcapt(!c,P[!c])|Kmove(!c,K[!c])|Nmove(!c,N[!c])|Rmove(!c,R[!c])|Bmove(!c,B[!c])|Qmove(!c,Q[!c]))&pos;}
 	void maintain(){X[0]=K[0]|Q[0]|R[0]|B[0]|N[0]|P[0];X[1]=K[1]|Q[1]|R[1]|B[1]|N[1]|P[1];all=X[0]|X[1];}
 
 	backup bak[110001];
@@ -188,7 +183,7 @@ struct board
 		UPD(N);
 		UPD(P);
 		maintain();
-		bool f=!K[p.c]||!inCheck(p.c,lowbit(K[p.c]));
+		bool f=!K[p.c]||!inCheck(p.c,K[p.c]);
 		undo();
 		return f;
 	}
@@ -218,7 +213,7 @@ struct board
 			if(castle[c][d])
 			{
 				int sq[]={!c?4:60,d?!c?5:61:!c?3:59,d?!c?6:62:!c?2:58},beg=begin[c][d],end=ending[c][d];
-				if(inCheck(c,sq[0])||inCheck(c,sq[1])||inCheck(c,sq[2]))continue;
+				if(inCheck(c,1ull<<sq[0])||inCheck(c,1ull<<sq[1])||inCheck(c,1ull<<sq[2]))continue;
 				if(all&(2*(1ull<<end)-(1ull<<beg)))continue;
 				add(64,64,64,c,d+1,0);
 			}
@@ -277,14 +272,12 @@ struct board
 			mask type=sp-1,bk=!c?4:60,ek=!type?bk-2:bk+2,br=!c?!type?0:7:!type?56:63,er=!type?ek+1:ek-1;
 			upd(K[c],K[c]^(1ull<<bk)^(1ull<<ek));
 			upd(R[c],R[c]^(1ull<<br)^(1ull<<er));
-			ss.castle++;
 		}
 		else if(3<=sp&&sp<=6) //? Promotion
 		{
 			upd(P[c],P[c]^(1ull<<from));
 			mask &go=(sp==3?Q:sp==4?R:sp==5?B:N)[c];
 			upd(go,go^(1ull<<to));
-			ss.prom++;
 		}
 		else //` Normal move
 		{
@@ -300,9 +293,7 @@ struct board
 			if(B[!c]&(1ull<<capt))upd(B[!c],B[!c]^(1ull<<capt));
 			if(N[!c]&(1ull<<capt))upd(N[!c],N[!c]^(1ull<<capt));
 			if(P[!c]&(1ull<<capt))upd(P[!c],P[!c]^(1ull<<capt));
-			ss.capt++;
 		}
-		if(capt!=64&&to!=capt)ss.enp++;
 
 		upd(Plies,pc==5||capt!=64?0:Plies+1);
 		upd(enp,sp==7?(from+to)>>1:64);
@@ -313,8 +304,6 @@ struct board
 		upd(toMove,toMove^1);
 		if(c)upd(Move,Move+1);
 		maintain();
-
-		if(K[!c]&&inCheck(!c,lowbit(K[!c])))ss.check++;
 	}
 
 	int perft(int d)
