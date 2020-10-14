@@ -1,4 +1,2 @@
-# Tiny Projects
-Some small projects by me. 
-### Chess Board
+# Chess Bitboard
 Simple CLI chess board implementation using bitboard.
